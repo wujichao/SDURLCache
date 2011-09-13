@@ -12,6 +12,8 @@
 #import <CommonCrypto/CommonDigest.h>
 
 #define kAFURLCachePath @"AFNetworkingURLCache"
+#define kAFURLCacheMaintenanceTime 5ull
+
 static NSTimeInterval const kAFURLCacheInfoDefaultMinCacheInterval = 5 * 60; // 5 minute
 static NSString *const kAFURLCacheInfoFileName = @"cacheInfo.plist";
 static NSString *const kAFURLCacheInfoDiskUsageKey = @"diskUsage";
@@ -96,6 +98,49 @@ inline void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t 
 		_dateFormatterQueue = dispatch_queue_create("com.alamofire.disk-cache.dateformatter", NULL);
 	});
 	return _dateFormatterQueue;
+}
+
+static dispatch_queue_t get_disk_cache_queue() {
+    static dispatch_once_t onceToken;
+    static dispatch_queue_t _diskCacheQueue;
+	dispatch_once(&onceToken, ^{
+		_diskCacheQueue = dispatch_queue_create("com.alamofire.disk-cache.processing", NULL);
+	});
+	return _diskCacheQueue;
+}
+
+static dispatch_queue_t get_disk_io_queue() {
+    static dispatch_queue_t _diskIOQueue;
+    static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		_diskIOQueue = dispatch_queue_create("com.alamofire.disk-cache.io", NULL);
+	});
+	return _diskIOQueue;
+}
+
+- (dispatch_source_t)maintenanceTimer {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+        _maintenanceTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+        if (_maintenanceTimer) {
+            dispatch_source_set_timer(_maintenanceTimer, dispatch_walltime(DISPATCH_TIME_NOW, kAFURLCacheMaintenanceTime * NSEC_PER_SEC), 
+                                      kAFURLCacheMaintenanceTime * NSEC_PER_SEC, kAFURLCacheMaintenanceTime/2 * NSEC_PER_SEC);
+            __block AFURLCache *blockSelf = self;
+            dispatch_source_set_event_handler(_maintenanceTimer, ^{
+                [blockSelf periodicMaintenance];
+                
+                // will abuse cache queue to lock timer
+                dispatch_async_afreentrant(get_disk_cache_queue(), ^{
+                    dispatch_suspend(_maintenanceTimer); // pause timer
+                    _timerPaused = YES;
+                });            
+            });
+            // initially wake up timer
+            dispatch_resume(_maintenanceTimer);
+        }
+    });
+    return _maintenanceTimer;
 }
 
 /*
@@ -237,11 +282,8 @@ inline void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t 
                 _diskCacheInfoDirty = NO;
                 _diskCacheUsage = [[_diskCacheInfo objectForKey:kAFURLCacheInfoDiskUsageKey] unsignedIntValue];
                 
-                _periodicMaintenanceTimer = [NSTimer scheduledTimerWithTimeInterval:5
-                                                                             target:self
-                                                                           selector:@selector(periodicMaintenance)
-                                                                           userInfo:nil
-                                                                            repeats:YES];
+                // create maintenance timer
+                [self maintenanceTimer];
             }
         });
     }
@@ -355,6 +397,12 @@ inline void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t 
         [(NSMutableDictionary *)[self.diskCacheInfo objectForKey:kAFURLCacheInfoSizesKey] setObject:cacheItemSize forKey:cacheKey];
         
         [self saveCacheInfo];
+        
+        // start timer for cleanup (rely on fact that dispatch_suspend syncs with disk cache queue)
+        if (_timerPaused) {
+            _timerPaused = NO;
+            dispatch_resume([self maintenanceTimer]);
+        }
     });
 }
 
@@ -508,10 +556,8 @@ inline void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t 
 #pragma mark NSObject
 
 - (void)dealloc {
-    [_periodicMaintenanceTimer invalidate];
-    dispatch_release(_diskCacheQueue);
-    dispatch_release(_dateFormatterQueue);
-    dispatch_release(_diskIOQueue);
+    dispatch_source_cancel(_maintenanceTimer);
+    dispatch_release(_maintenanceTimer);
     [_diskCachePath release], _diskCachePath = nil;
     [_diskCacheInfo release], _diskCacheInfo = nil;
     [_ioQueue release], _ioQueue = nil;

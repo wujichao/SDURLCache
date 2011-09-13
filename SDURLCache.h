@@ -21,12 +21,8 @@
     BOOL _ignoreMemoryOnlyStoragePolicy;
     NSUInteger _diskCacheUsage;
     NSTimeInterval _minCacheInterval;
-    NSOperationQueue *_ioQueue;
-    NSTimer *_periodicMaintenanceTimer;
-    NSOperation *_periodicMaintenanceOperation;
-    NSDateFormatter *_FC1123DateFormatter;
-    NSDateFormatter *_ANSICDateFormatter;
-    NSDateFormatter *_RFC850DateFormatter;
+    dispatch_source_t _maintenanceTimer;
+    BOOL _timerPaused;
 }
 
 /*
