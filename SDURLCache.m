@@ -1,6 +1,8 @@
 //
 //  SDURLCache.m
 //  SDURLCache
+// Copyright (c) 2010-2011 Olivier Poitrey <rs@dailymotion.com>
+// Modernized to use GCD by Peter Steinberger <steipete@gmail.com>
 //
 //  Created by Olivier Poitrey on 15/03/10.
 //  Copyright 2010 Dailymotion. All rights reserved.
@@ -9,6 +11,7 @@
 #import "SDURLCache.h"
 #import <CommonCrypto/CommonDigest.h>
 
+#define kAFURLCachePath @"AFNetworkingURLCache"
 static NSTimeInterval const kAFURLCacheInfoDefaultMinCacheInterval = 5 * 60; // 5 minute
 static NSString *const kAFURLCacheInfoFileName = @"cacheInfo.plist";
 static NSString *const kAFURLCacheInfoDiskUsageKey = @"diskUsage";
@@ -43,22 +46,15 @@ static NSDateFormatter* CreateDateFormatter(NSString *format) {
 
 @end
 
+// deadlock-free variant of dispatch_sync
 void dispatch_sync_afreentrant(dispatch_queue_t queue, dispatch_block_t block);
-void dispatch_sync_afreentrant(dispatch_queue_t queue, dispatch_block_t block) {
-	if (dispatch_get_current_queue() == queue) {
-		block();
-	}else {
-		dispatch_sync(queue, block);
-	}
+inline void dispatch_sync_afreentrant(dispatch_queue_t queue, dispatch_block_t block) {
+    dispatch_get_current_queue() == queue ? block() : dispatch_sync(queue, block);
 }
 
 void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t block);
-void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t block) {
-	if (dispatch_get_current_queue() == queue) {
-		block();
-	}else {
-		dispatch_async(queue, block);
-	}
+inline void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t block) {
+	dispatch_get_current_queue() == queue ? block() : dispatch_async(queue, block);
 }
 
 @interface SDURLCache ()
@@ -239,7 +235,6 @@ void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t block) 
                                       nil];
                 }
                 _diskCacheInfoDirty = NO;
-                
                 _diskCacheUsage = [[_diskCacheInfo objectForKey:kAFURLCacheInfoDiskUsageKey] unsignedIntValue];
                 
                 _periodicMaintenanceTimer = [NSTimer scheduledTimerWithTimeInterval:5
@@ -364,12 +359,6 @@ void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t block) 
 }
 
 - (void)periodicMaintenance {
-    // If another same maintenance operation is already sceduled, cancel it so this new operation will be executed after other
-    // operations of the queue, so we can group more work together
-    [_periodicMaintenanceOperation cancel];
-    self.periodicMaintenanceOperation = nil;
-    
-    // If disk usage outrich capacity, run the cache eviction operation and if cacheInfo dictionnary is dirty, save it in an operation
     if (_diskCacheUsage > self.diskCapacity) {
         self.periodicMaintenanceOperation = [[[NSInvocationOperation alloc] initWithTarget:self selector:@selector(balanceDiskUsage) object:nil] autorelease];
         [_ioQueue addOperation:_periodicMaintenanceOperation];
@@ -384,7 +373,7 @@ void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t block) 
 
 + (NSString *)defaultCachePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
-    return [[paths objectAtIndex:0] stringByAppendingPathComponent:@"SDURLCache"];
+    return [[paths objectAtIndex:0] stringByAppendingPathComponent:kAFURLCachePath];
 }
 
 #pragma mark NSURLCache
@@ -520,15 +509,15 @@ void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t block) 
 
 - (void)dealloc {
     [_periodicMaintenanceTimer invalidate];
-    [_periodicMaintenanceOperation release], _periodicMaintenanceOperation = nil;
+    dispatch_release(_diskCacheQueue);
+    dispatch_release(_dateFormatterQueue);
+    dispatch_release(_diskIOQueue);
     [_diskCachePath release], _diskCachePath = nil;
     [_diskCacheInfo release], _diskCacheInfo = nil;
     [_ioQueue release], _ioQueue = nil;
     [_FC1123DateFormatter release];
     [_ANSICDateFormatter release];
     [_RFC850DateFormatter release];    
-    dispatch_release(_diskCacheQueue);
-    dispatch_release(_dateFormatterQueue);
     [super dealloc];
 }
 
