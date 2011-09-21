@@ -189,15 +189,8 @@ static dispatch_queue_t get_disk_io_queue() {
     
     // Define "now" based on the request
     NSString *date = [headers objectForKey:@"Date"];
-    NSDate *now;
-    if (date)
-    {
-        now = [self dateFromHttpDateString:date];
-    }
-    else {
-        // If no Date: header, define now from local clock
-        now = [NSDate date];
-    }
+    // If no Date: header, define now from local clock
+    NSDate *now = date ? [self dateFromHttpDateString:date] : [NSDate date];
     
     // Look at info from the Cache-Control: max-age=n header
     NSString *cacheControl = [headers objectForKey:@"Cache-Control"];
