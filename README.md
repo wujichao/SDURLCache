@@ -37,3 +37,5 @@ property to `NSURLCacheStorageAllowedInMemoryOnly`. See example below:
                                             storagePolicy:NSURLCacheStorageAllowedInMemoryOnly];
         return [memOnlyCachedResponse autorelease];
     }
+
+This is a fork of https://github.com/rs/SDURLCache, heavily changed to fully embrace GCD, drops support for iOS3, much faster than the initial version.
