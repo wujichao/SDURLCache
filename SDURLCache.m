@@ -1,17 +1,30 @@
+// SDURLCache.m
 //
-//  SDURLCache.m
-//  SDURLCache
 // Copyright (c) 2010-2011 Olivier Poitrey <rs@dailymotion.com>
 // Modernized to use GCD by Peter Steinberger <steipete@gmail.com>
 //
-//  Created by Olivier Poitrey on 15/03/10.
-//  Copyright 2010 Dailymotion. All rights reserved.
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is furnished
+// to do so, subject to the following conditions:
 //
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 
 #import "SDURLCache.h"
 #import <CommonCrypto/CommonDigest.h>
 
-#define kAFURLCachePath @"AFNetworkingURLCache"
+#define kAFURLCachePath @"SDNetworkingURLCache"
 #define kAFURLCacheMaintenanceTime 5ull
 
 static NSTimeInterval const kAFURLCacheInfoDefaultMinCacheInterval = 5 * 60; // 5 minute
@@ -62,14 +75,12 @@ inline void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t 
 @interface SDURLCache ()
 @property (nonatomic, retain) NSString *diskCachePath;
 @property (nonatomic, retain) NSMutableDictionary *diskCacheInfo;
-@property (nonatomic, retain) NSOperationQueue *ioQueue;
-@property (retain) NSOperation *periodicMaintenanceOperation;
 - (void)periodicMaintenance;
 @end
 
 @implementation SDURLCache
 
-#pragma mark AFURLCache (tools)
+#pragma mark SDURLCache (tools)
 
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request {
     NSString *string = request.URL.absoluteString;
@@ -90,9 +101,10 @@ inline void dispatch_async_afreentrant(dispatch_queue_t queue, dispatch_block_t 
             r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], r[13], r[14], r[15]];
 }
 
-#pragma mark AFURLCache (private)
+#pragma mark SDURLCache (private)
 
-- (dispatch_queue_t)dateFormatterQueue {
+static dispatch_queue_t get_date_formatter_queue() {
+    static dispatch_queue_t _dateFormatterQueue;
     static dispatch_once_t onceToken;
 	dispatch_once(&onceToken, ^{
 		_dateFormatterQueue = dispatch_queue_create("com.alamofire.disk-cache.dateformatter", NULL);
@@ -126,7 +138,7 @@ static dispatch_queue_t get_disk_io_queue() {
         if (_maintenanceTimer) {
             dispatch_source_set_timer(_maintenanceTimer, dispatch_walltime(DISPATCH_TIME_NOW, kAFURLCacheMaintenanceTime * NSEC_PER_SEC), 
                                       kAFURLCacheMaintenanceTime * NSEC_PER_SEC, kAFURLCacheMaintenanceTime/2 * NSEC_PER_SEC);
-            __block AFURLCache *blockSelf = self;
+            __block SDURLCache *blockSelf = self;
             dispatch_source_set_event_handler(_maintenanceTimer, ^{
                 [blockSelf periodicMaintenance];
                 
@@ -146,8 +158,11 @@ static dispatch_queue_t get_disk_io_queue() {
 /*
  * Parse HTTP Date: http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1
  */
-- (NSDate *)dateFromHttpDateString:(NSString *)httpDate {
++ (NSDate *)dateFromHttpDateString:(NSString *)httpDate {
     static dispatch_once_t onceToken;
+    static NSDateFormatter *_FC1123DateFormatter;
+    static NSDateFormatter *_ANSICDateFormatter;
+    static NSDateFormatter *_RFC850DateFormatter;
     dispatch_once(&onceToken, ^{
         _FC1123DateFormatter = CreateDateFormatter(@"EEE, dd MMM yyyy HH:mm:ss z");
         _ANSICDateFormatter = CreateDateFormatter(@"EEE MMM d HH:mm:ss yyyy");
@@ -155,8 +170,7 @@ static dispatch_queue_t get_disk_io_queue() {
     });
     
     __block NSDate *date = nil;
-    
-    dispatch_sync([self dateFormatterQueue], ^{
+    dispatch_sync(get_date_formatter_queue(), ^{
         date = [_FC1123DateFormatter dateFromString:httpDate];
         if (!date) {
             // ANSI C date format - Sun Nov  6 08:49:37 1994
@@ -174,7 +188,7 @@ static dispatch_queue_t get_disk_io_queue() {
 /*
  * This method tries to determine the expiration date based on a response headers dictionary.
  */
-- (NSDate *)expirationDateFromHeaders:(NSDictionary *)headers withStatusCode:(NSInteger)status {
++ (NSDate *)expirationDateFromHeaders:(NSDictionary *)headers withStatusCode:(NSInteger)status {
     if (status != 200 && status != 203 && status != 300 && status != 301 && status != 302 && status != 307 && status != 410) {
         // Uncacheable response status code
         return nil;
@@ -190,7 +204,7 @@ static dispatch_queue_t get_disk_io_queue() {
     // Define "now" based on the request
     NSString *date = [headers objectForKey:@"Date"];
     // If no Date: header, define now from local clock
-    NSDate *now = date ? [self dateFromHttpDateString:date] : [NSDate date];
+    NSDate *now = date ? [SDURLCache dateFromHttpDateString:date] : [NSDate date];
     
     // Look at info from the Cache-Control: max-age=n header
     NSString *cacheControl = [headers objectForKey:@"Cache-Control"];
@@ -207,7 +221,7 @@ static dispatch_queue_t get_disk_io_queue() {
             NSScanner *cacheControlScanner = [NSScanner scannerWithString:cacheControl];
             [cacheControlScanner setScanLocation:foundRange.location + foundRange.length];
             if ([cacheControlScanner scanInteger:&maxAge]) {
-                return maxAge > 0 ? [NSDate dateWithTimeInterval:maxAge sinceDate:now] : nil;
+                return maxAge > 0 ? [[[NSDate alloc] initWithTimeInterval:maxAge sinceDate:now] autorelease] : nil;
             }
         }
     }
@@ -216,7 +230,7 @@ static dispatch_queue_t get_disk_io_queue() {
     NSString *expires = [headers objectForKey:@"Expires"];
     if (expires) {
         NSTimeInterval expirationInterval = 0;
-        NSDate *expirationDate = [self dateFromHttpDateString:expires];
+        NSDate *expirationDate = [SDURLCache dateFromHttpDateString:expires];
         if (expirationDate) {
             expirationInterval = [expirationDate timeIntervalSinceDate:now];
         }
@@ -239,7 +253,7 @@ static dispatch_queue_t get_disk_io_queue() {
     NSString *lastModified = [headers objectForKey:@"Last-Modified"];
     if (lastModified) {
         NSTimeInterval age = 0;
-        NSDate *lastModifiedDate = [self dateFromHttpDateString:lastModified];
+        NSDate *lastModifiedDate = [SDURLCache dateFromHttpDateString:lastModified];
         if (lastModifiedDate) {
             // Define the age of the document by comparing the Date header with the Last-Modified header
             age = [now timeIntervalSinceDate:lastModifiedDate];
@@ -251,18 +265,9 @@ static dispatch_queue_t get_disk_io_queue() {
     return [[[NSDate alloc] initWithTimeInterval:kAFURLCacheDefault sinceDate:now] autorelease];
 }
 
-
-- (dispatch_queue_t)diskCacheQueue {
-    static dispatch_once_t onceToken;
-	dispatch_once(&onceToken, ^{
-		_diskCacheQueue = dispatch_queue_create("com.alamofire.disk-cache.processing", NULL);
-	});
-	return _diskCacheQueue;
-}
-
 - (NSMutableDictionary *)diskCacheInfo {
     if (!_diskCacheInfo) {
-        dispatch_sync_afreentrant([self diskCacheQueue], ^{
+        dispatch_sync_afreentrant(get_disk_cache_queue(), ^{
             if (!_diskCacheInfo) { // Check again, maybe another thread created it while waiting for the mutex
                 _diskCacheInfo = [[NSMutableDictionary alloc] initWithContentsOfFile:[_diskCachePath stringByAppendingPathComponent:kAFURLCacheInfoFileName]];
                 if (!_diskCacheInfo) {
@@ -300,7 +305,7 @@ static dispatch_queue_t get_disk_io_queue() {
 
 - (void)saveCacheInfo {
     [self createDiskCachePath];
-    dispatch_async_afreentrant([self diskCacheQueue], ^{
+    dispatch_async_afreentrant(get_disk_cache_queue(), ^{
         NSData *data = [NSPropertyListSerialization dataFromPropertyList:self.diskCacheInfo format:NSPropertyListBinaryFormat_v1_0 errorDescription:NULL];
         if (data) {
             [data writeToFile:[_diskCachePath stringByAppendingPathComponent:kAFURLCacheInfoFileName] atomically:YES];
@@ -311,7 +316,7 @@ static dispatch_queue_t get_disk_io_queue() {
 }
 
 - (void)removeCachedResponseForCachedKeys:(NSArray *)cacheKeys {
-    dispatch_async_afreentrant([self diskCacheQueue], ^{
+    dispatch_async_afreentrant(get_disk_cache_queue(), ^{
         NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
         
         NSEnumerator *enumerator = [cacheKeys objectEnumerator];
@@ -340,7 +345,7 @@ static dispatch_queue_t get_disk_io_queue() {
         return; // Already done
     }
     
-    dispatch_async_afreentrant([self diskCacheQueue], ^{
+    dispatch_async_afreentrant(get_disk_cache_queue(), ^{
         NSMutableArray *keysToRemove = [NSMutableArray array];
         
         // Apply LRU cache eviction algorithm while disk usage outreach capacity
@@ -362,11 +367,10 @@ static dispatch_queue_t get_disk_io_queue() {
 }
 
 
-- (void)storeToDisk:(NSDictionary *)context {
-    NSURLRequest *request = [context objectForKey:@"request"];
-    NSCachedURLResponse *cachedResponse = [context objectForKey:@"cachedResponse"];
+- (void)storeRequestToDisk:(NSURLRequest *)request response:(NSCachedURLResponse *)cachedResponse {
     NSString *cacheKey = [SDURLCache cacheKeyForURL:request.URL];
-    NSString *cacheFilePath = [diskCachePath stringByAppendingPathComponent:cacheKey];
+    NSString *cacheFilePath = [_diskCachePath stringByAppendingPathComponent:cacheKey];
+    
     [self createDiskCachePath];
     
     // Archive the cached response on disk
@@ -380,7 +384,7 @@ static dispatch_queue_t get_disk_io_queue() {
     NSNumber *cacheItemSize = [[fileManager attributesOfItemAtPath:cacheFilePath error:NULL] objectForKey:NSFileSize];
     [fileManager release];
     
-    dispatch_async_afreentrant([self diskCacheQueue], ^{
+    dispatch_async_afreentrant(get_disk_cache_queue(), ^{
         _diskCacheUsage += [cacheItemSize unsignedIntegerValue];
         [self.diskCacheInfo setObject:[NSNumber numberWithUnsignedInteger:_diskCacheUsage] forKey:kAFURLCacheInfoDiskUsageKey];
         
@@ -398,18 +402,21 @@ static dispatch_queue_t get_disk_io_queue() {
     });
 }
 
+// called in NSTimer
 - (void)periodicMaintenance {
     if (_diskCacheUsage > self.diskCapacity) {
-        self.periodicMaintenanceOperation = [[[NSInvocationOperation alloc] initWithTarget:self selector:@selector(balanceDiskUsage) object:nil] autorelease];
-        [_ioQueue addOperation:_periodicMaintenanceOperation];
+        dispatch_async(get_disk_io_queue(), ^{
+            [self balanceDiskUsage];
+        });
     }
     else if (_diskCacheInfoDirty) {
-        self.periodicMaintenanceOperation = [[[NSInvocationOperation alloc] initWithTarget:self selector:@selector(saveCacheInfo) object:nil] autorelease];
-        [_ioQueue addOperation:_periodicMaintenanceOperation];
+        dispatch_async(get_disk_io_queue(), ^{
+            [self saveCacheInfo];
+        });
     }
 }
 
-#pragma mark AFURLCache
+#pragma mark SDURLCache
 
 + (NSString *)defaultCachePath {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
@@ -428,10 +435,9 @@ static dispatch_queue_t get_disk_io_queue() {
     return self;
 }
 
-- (void)storeCachedResponse:(NSCachedURLResponse *)cachedResponse forRequest:(NSURLRequest *)request
-{
+- (void)storeCachedResponse:(NSCachedURLResponse *)cachedResponse forRequest:(NSURLRequest *)request {
     request = [SDURLCache canonicalRequestForRequest:request];
-
+    
     if (request.cachePolicy == NSURLRequestReloadIgnoringLocalCacheData
         || request.cachePolicy == NSURLRequestReloadIgnoringLocalAndRemoteCacheData
         || request.cachePolicy == NSURLRequestReloadIgnoringCacheData) {
@@ -450,54 +456,50 @@ static dispatch_queue_t get_disk_io_queue() {
         NSDictionary *headers = [(NSHTTPURLResponse *)cachedResponse.response allHeaderFields];
         // RFC 2616 section 13.3.4 says clients MUST use Etag in any cache-conditional request if provided by server
         if (![headers objectForKey:@"Etag"]) {
-            NSDate *expirationDate = [self expirationDateFromHeaders:headers
-                                                      withStatusCode:((NSHTTPURLResponse *)cachedResponse.response).statusCode];
+            NSDate *expirationDate = [SDURLCache expirationDateFromHeaders:headers
+                                                            withStatusCode:((NSHTTPURLResponse *)cachedResponse.response).statusCode];
             if (!expirationDate || [expirationDate timeIntervalSinceNow] - _minCacheInterval <= 0) {
                 // This response is not cacheable, headers said
                 return;
             }
         }
         
-        [_ioQueue addOperation:[[[NSInvocationOperation alloc] initWithTarget:self
-                                                                     selector:@selector(storeToDisk:)
-                                                                       object:[NSDictionary dictionaryWithObjectsAndKeys:
-                                                                               cachedResponse, @"cachedResponse",
-                                                                               request, @"request",
-                                                                               nil]] autorelease]];
+        dispatch_async(get_disk_io_queue(), ^{
+            [self storeRequestToDisk:request response:cachedResponse];
+        });
     }
 }
 
-- (NSCachedURLResponse *)cachedResponseForRequest:(NSURLRequest *)request
-{
+- (NSCachedURLResponse *)cachedResponseForRequest:(NSURLRequest *)request {
     request = [SDURLCache canonicalRequestForRequest:request];
-
+    
     NSCachedURLResponse *memoryResponse = [super cachedResponseForRequest:request];
     if (memoryResponse) {
         return memoryResponse;
     }
-
+    
     NSString *cacheKey = [SDURLCache cacheKeyForURL:request.URL];
-
+    
     // NOTE: We don't handle expiration here as even staled cache data is necessary for NSURLConnection to handle cache revalidation.
     //       Staled cache data is also needed for cachePolicies which force the use of the cache.
     __block NSCachedURLResponse *response = nil;
-    dispatch_sync_afreentrant([self diskCacheQueue], ^{
+    dispatch_sync(get_disk_cache_queue(), ^{
         NSMutableDictionary *accesses = [self.diskCacheInfo objectForKey:kAFURLCacheInfoAccessesKey];
         if ([accesses objectForKey:cacheKey]) { // OPTI: Check for cache-hit in a in-memory dictionnary before to hit the FS
-            NSCachedURLResponse *diskResponse = [NSKeyedUnarchiver unarchiveObjectWithFile:[_diskCachePath stringByAppendingPathComponent:cacheKey]];
-            if (diskResponse) {
+            response = [NSKeyedUnarchiver unarchiveObjectWithFile:[_diskCachePath stringByAppendingPathComponent:cacheKey]];
+            if (response) {
                 // OPTI: Log the entry last access time for LRU cache eviction algorithm but don't save the dictionary
                 //       on disk now in order to save IO and time
                 [accesses setObject:[NSDate date] forKey:cacheKey];
                 _diskCacheInfoDirty = YES;
-                
-                // OPTI: Store the response to memory cache for potential future requests
-                [super storeCachedResponse:diskResponse forRequest:request];
-                
-                response = [[diskResponse retain] autorelease];
             }
         }
     });
+    
+    // OPTI: Store the response to memory cache for potential future requests
+    if (response) {
+        [super storeCachedResponse:response forRequest:request];
+    }
     
     return response;
 }
@@ -509,9 +511,9 @@ static dispatch_queue_t get_disk_io_queue() {
     return _diskCacheUsage;
 }
 
-- (void)removeCachedResponseForRequest:(NSURLRequest *)request
-{
+- (void)removeCachedResponseForRequest:(NSURLRequest *)request {
     request = [SDURLCache canonicalRequestForRequest:request];
+    
     [super removeCachedResponseForRequest:request];
     [self removeCachedResponseForCachedKeys:[NSArray arrayWithObject:[SDURLCache cacheKeyForURL:request.URL]]];
     [self saveCacheInfo];
@@ -521,7 +523,7 @@ static dispatch_queue_t get_disk_io_queue() {
     [super removeAllCachedResponses];
     NSFileManager *fileManager = [[[NSFileManager alloc] init] autorelease];
     [fileManager removeItemAtPath:_diskCachePath error:NULL];
-    dispatch_async_afreentrant([self diskCacheQueue], ^{
+    dispatch_async_afreentrant(get_disk_cache_queue(), ^{
         self.diskCacheInfo = nil;
     });
 }
@@ -529,12 +531,12 @@ static dispatch_queue_t get_disk_io_queue() {
 - (BOOL)isCached:(NSURL *)url {
     NSURLRequest *request = [NSURLRequest requestWithURL:url];
     request = [SDURLCache canonicalRequestForRequest:request];
-
+    
     if ([super cachedResponseForRequest:request]) {
         return YES;
     }
     NSString *cacheKey = [SDURLCache cacheKeyForURL:url];
-    NSString *cacheFile = [diskCachePath stringByAppendingPathComponent:cacheKey];
+    NSString *cacheFile = [_diskCachePath stringByAppendingPathComponent:cacheKey];
     
     BOOL isCached = [[[[NSFileManager alloc] init] autorelease] fileExistsAtPath:cacheFile];
     return isCached;
@@ -547,18 +549,12 @@ static dispatch_queue_t get_disk_io_queue() {
     dispatch_release(_maintenanceTimer);
     [_diskCachePath release], _diskCachePath = nil;
     [_diskCacheInfo release], _diskCacheInfo = nil;
-    [_ioQueue release], _ioQueue = nil;
-    [_FC1123DateFormatter release];
-    [_ANSICDateFormatter release];
-    [_RFC850DateFormatter release];    
     [super dealloc];
 }
 
 @synthesize minCacheInterval = _minCacheInterval;
 @synthesize ignoreMemoryOnlyStoragePolicy = _ignoreMemoryOnlyStoragePolicy;
 @synthesize diskCachePath = _diskCachePath;
-@synthesize periodicMaintenanceOperation = _periodicMaintenanceOperation;
-@synthesize ioQueue = _ioQueue;
 @synthesize diskCacheInfo = _diskCacheInfo;
 
 @end
