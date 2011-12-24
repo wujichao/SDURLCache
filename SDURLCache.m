@@ -196,7 +196,7 @@ static const char _httpDate_eof_actions[] = {
 };
 
 static NSDate *_parseHTTPDate(const char *buf, size_t bufLen) {
-    const char *parseBuf = buf, *p = parseBuf, *pe = p + bufLen, *eof = pe;
+    const char *p = buf, *pe = p + bufLen, *eof = pe;
     int parsed = 0, cs = 1;
     NSDate *date = NULL;
 
@@ -217,7 +217,7 @@ static NSDate *_parseHTTPDate(const char *buf, size_t bufLen) {
 
         if(_httpDate_trans_actions[_trans] == 0) { goto _again; }
 
-        switch ( _httpDate_trans_actions[_trans] ) {
+        switch(_httpDate_trans_actions[_trans]) {
             case 6:  gdate.year   = gdate.year * 10 + ((*p) - '0');                     break;
             case 18: gdate.year   = gdate.year * 10 + ((*p) - '0'); gdate.year += 1900; break;
             case 10: gdate.month  =  1; break;
