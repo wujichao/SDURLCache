@@ -27,13 +27,13 @@
 #define kAFURLCachePath @"SDNetworkingURLCache"
 #define kAFURLCacheMaintenanceTime 5ull
 
-static NSTimeInterval const kAFURLCacheInfoDefaultMinCacheInterval = 5 * 60; // 5 minute
+static NSTimeInterval const kAFURLCacheInfoDefaultMinCacheInterval = 5.0 * 60.0; // 5 minute
 static NSString *const kAFURLCacheInfoFileName = @"cacheInfo.plist";
 static NSString *const kAFURLCacheInfoDiskUsageKey = @"diskUsage";
 static NSString *const kAFURLCacheInfoAccessesKey = @"accesses";
 static NSString *const kAFURLCacheInfoSizesKey = @"sizes";
 static float const kAFURLCacheLastModFraction = 0.1f; // 10% since Last-Modified suggested by RFC2616 section 13.2.4
-static float const kAFURLCacheDefault = 3600; // Default cache expiration delay if none defined (1 hour)
+static float const kAFURLCacheDefault = 3600.0f; // Default cache expiration delay if none defined (1 hour)
 
 
 static const char _httpDate_trans_keys[] = {
