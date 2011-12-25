@@ -35,7 +35,14 @@ static NSString *const kAFURLCacheInfoSizesKey = @"sizes";
 static float const kAFURLCacheLastModFraction = 0.1f; // 10% since Last-Modified suggested by RFC2616 section 13.2.4
 static float const kAFURLCacheDefault = 3600.0f; // Default cache expiration delay if none defined (1 hour)
 
-
+/**
+ Below is ragel source used to compile those tables. The output was polished / pretty-printed and tweaked from ragel.
+ As the generated code is "hard" to debug, we store the code in http-date.r1
+ 
+ shell% ragel -F1 http-date.rl
+ shell% gcc -o http-date http-date.c
+ shell% ./http-date 'Sun, 06 Nov 1994 08:49:37 GMT' 'Sunday, 06-Nov-94 08:49:37 GMT' 'Sun Nov  6 08:49:37 1994' 'Sat Dec 24 14:34:26 2037' 'Sunday, 06-Nov-94 08:49:37 GMT' 'Sun, 06 Nov 1994 08:49:37 GMT'
+ */
 static const char _httpDate_trans_keys[] = {
       0,   0,  70,  87, 114, 114, 105, 105,  32, 100,  65,  83, 112, 117, 114, 114,  32,
      32,  32,  57,  48,  57,  32,  32,  48,  57,  48,  57,  58,  58,  48,  57,  48,  57,
