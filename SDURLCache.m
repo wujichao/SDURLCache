@@ -599,6 +599,8 @@ static dispatch_queue_t get_disk_io_queue() {
     [fileManager release];
     
     dispatch_async_afreentrant(get_disk_cache_queue(), ^{
+        NSNumber *previousCacheItemSize = [[self.diskCacheInfo objectForKey:kAFURLCacheInfoSizesKey] objectForKey:cacheKey];
+        _diskCacheUsage -= [previousCacheItemSize unsignedIntegerValue];
         _diskCacheUsage += [cacheItemSize unsignedIntegerValue];
         [self.diskCacheInfo setObject:[NSNumber numberWithUnsignedInteger:_diskCacheUsage] forKey:kAFURLCacheInfoDiskUsageKey];
         
