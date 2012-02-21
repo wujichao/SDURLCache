@@ -420,8 +420,9 @@ static dispatch_queue_t get_disk_io_queue() {
     NSDate *now = date ? [SDURLCache dateFromHttpDateString:date] : [NSDate date];
     
     // Look at info from the Cache-Control: max-age=n header
-    NSString *cacheControl = [headers objectForKey:@"Cache-Control"];
-    if (cacheControl) {
+    NSString *cacheControl = [[headers objectForKey:@"Cache-Control"] lowercaseString];
+    if (cacheControl)
+    {
         NSRange foundRange = [cacheControl rangeOfString:@"no-store"];
         if (foundRange.length > 0) {
             // Can't be cached
@@ -429,10 +430,11 @@ static dispatch_queue_t get_disk_io_queue() {
         }
         
         NSInteger maxAge;
-        foundRange = [cacheControl rangeOfString:@"max-age="];
+        foundRange = [cacheControl rangeOfString:@"max-age"];
         if (foundRange.length > 0) {
             NSScanner *cacheControlScanner = [NSScanner scannerWithString:cacheControl];
             [cacheControlScanner setScanLocation:foundRange.location + foundRange.length];
+            [cacheControlScanner scanString:@"=" intoString:nil];
             if ([cacheControlScanner scanInteger:&maxAge]) {
                 return maxAge > 0 ? [[[NSDate alloc] initWithTimeInterval:maxAge sinceDate:now] autorelease] : nil;
             }
