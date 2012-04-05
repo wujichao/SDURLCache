@@ -393,7 +393,7 @@ static dispatch_queue_t get_disk_io_queue() {
         CFIndex usedBytes = 0L, convertedCount = 0L;
         convertedCount = CFStringGetBytes((__bridge CFStringRef)httpDate, CFRangeMake(0L, (CFIndex)stringLength), kCFStringEncodingUTF8, '?', NO, (UInt8 *)stringBuffer, sizeof(stringBuffer) - 1L, &usedBytes);
         if(((size_t)convertedCount != stringLength) || (usedBytes < 0L)) { return(NULL); }
-        stringBuffer[convertedCount] = 0;
+        stringBuffer[usedBytes] = '\0';
         cStringPtr = (const char *)stringBuffer;
     }
     return(_parseHTTPDate(cStringPtr, stringLength));
