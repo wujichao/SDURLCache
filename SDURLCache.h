@@ -10,17 +10,14 @@
 
 #import <Foundation/Foundation.h>
 
-@interface SDURLCache : NSURLCache
-{
+@interface SDURLCache : NSURLCache {
     @private
-    NSString *_diskCachePath;
-    NSMutableDictionary *_diskCacheInfo;
     BOOL _diskCacheInfoDirty;
     BOOL _ignoreMemoryOnlyStoragePolicy;
+    BOOL _timerPaused;
     NSUInteger _diskCacheUsage;
     NSTimeInterval _minCacheInterval;
     dispatch_source_t _maintenanceTimer;
-    BOOL _timerPaused;
 }
 
 /*
