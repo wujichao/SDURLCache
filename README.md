@@ -1,4 +1,5 @@
-This is a fork of https://github.com/rs/SDURLCache, heavily changed to fully embrace GCD, drops support for iOS3, much faster than the initial version.
+This is a fork of https://github.com/rs/SDURLCache, that drops iOS3 and uses ARC.
+The changes to use GDC and the improved date parsing are also a potential speed-bump, although I haven't gone through the effort to actually benchmark this.
 
 On iPhone OS, Apple did remove on-disk cache support for unknown reason. Some will say it's to save
 flash-drive life, others will arg it's to save disk capacity. As it is explained in the
@@ -15,7 +16,7 @@ that's it, you instantly give on-disk HTTP request caching capability to your ap
                                                          diskCapacity:1024*1024*5 // 5MB disk cache
                                                              diskPath:[SDURLCache defaultCachePath]];
     [NSURLCache setSharedURLCache:urlCache];
-    [urlCache release];
+    // [urlCache release]; (if you don't yet use ARC)
 
 To save flash drive, SDURLCache doesn't cache on disk responses if cache expiration delay is lower
 than 5 minutes by default. You can change this behavior by changing the `minCacheInterval` property.
