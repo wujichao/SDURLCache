@@ -1,3 +1,5 @@
+**Note: as of iOS5, this is no longer needed.** [NSURLCache now properly caches objects, as long as the Cache-Control header is set.](http://petersteinberger.com/blog/2012/nsurlcache-uses-a-disk-cache-as-of-ios5/)
+
 This is a fork of https://github.com/rs/SDURLCache, that drops iOS3 and uses ARC.
 The changes to use GDC and the improved date parsing are also a potential speed-bump, although I haven't gone through the effort to actually benchmark this.
 
