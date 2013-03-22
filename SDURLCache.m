@@ -643,6 +643,7 @@ static dispatch_queue_t get_disk_io_queue() {
 - (id)initWithMemoryCapacity:(NSUInteger)memoryCapacity diskCapacity:(NSUInteger)diskCapacity diskPath:(NSString *)path {
     if ((self = [super initWithMemoryCapacity:memoryCapacity diskCapacity:diskCapacity diskPath:path])) {
         self.minCacheInterval = kAFURLCacheInfoDefaultMinCacheInterval;
+        self.shouldRespectCacheControlHeaders = YES;
         self.diskCachePath = path;
         self.ignoreMemoryOnlyStoragePolicy = NO;
 	}
@@ -668,15 +669,19 @@ static dispatch_queue_t get_disk_io_queue() {
     NSURLCacheStoragePolicy storagePolicy = cachedResponse.storagePolicy;
     if ((storagePolicy == NSURLCacheStorageAllowed || (storagePolicy == NSURLCacheStorageAllowedInMemoryOnly && _ignoreMemoryOnlyStoragePolicy))
         && [cachedResponse.response isKindOfClass:[NSHTTPURLResponse self]]
-        && cachedResponse.data.length < self.diskCapacity) {
-        NSDictionary *headers = [(NSHTTPURLResponse *)cachedResponse.response allHeaderFields];
-        // RFC 2616 section 13.3.4 says clients MUST use Etag in any cache-conditional request if provided by server
-        if (![headers objectForKey:@"Etag"]) {
-            NSDate *expirationDate = [SDURLCache expirationDateFromHeaders:headers
-                                                            withStatusCode:((NSHTTPURLResponse *)cachedResponse.response).statusCode];
-            if (!expirationDate || [expirationDate timeIntervalSinceNow] - _minCacheInterval <= 0) {
-                // This response is not cacheable, headers said
-                return;
+        && cachedResponse.data.length < self.diskCapacity)
+    {
+        if (self.shouldRespectCacheControlHeaders)
+        {
+            NSDictionary *headers = [(NSHTTPURLResponse *)cachedResponse.response allHeaderFields];
+            // RFC 2616 section 13.3.4 says clients MUST use Etag in any cache-conditional request if provided by server
+            if (![headers objectForKey:@"Etag"]) {
+                NSDate *expirationDate = [SDURLCache expirationDateFromHeaders:headers
+                                                                withStatusCode:((NSHTTPURLResponse *)cachedResponse.response).statusCode];
+                if (!expirationDate || [expirationDate timeIntervalSinceNow] - _minCacheInterval <= 0) {
+                    // This response is not cacheable, headers said
+                    return;
+                }
             }
         }
         
@@ -787,6 +792,7 @@ static dispatch_queue_t get_disk_io_queue() {
 @synthesize minCacheInterval = _minCacheInterval;
 @synthesize ignoreMemoryOnlyStoragePolicy = _ignoreMemoryOnlyStoragePolicy;
 @synthesize allowCachingResponsesToNonCachedRequests = _allowCachingResponsesToNonCachedRequests;
+@synthesize shouldRespectCacheControlHeaders = _shouldRespectCacheControlHeaders;
 @synthesize diskCachePath = _diskCachePath;
 @synthesize diskCacheInfo = _diskCacheInfo;
 
