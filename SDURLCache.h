@@ -10,6 +10,8 @@
 
 #import <Foundation/Foundation.h>
 
+/* Define SDURLCACHE_DEBUG=1 if you want to get some more info about the cached requests. */
+
 @interface SDURLCache : NSURLCache
 {
     @private
