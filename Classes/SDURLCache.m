@@ -281,7 +281,12 @@ static NSDate *_parseHTTPDate(const char *buf, size_t bufLen) {
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
 - (void)encodeWithCoder:(NSCoder *)coder {
-    [coder encodeObject:self.data forKey:@"data"];
+    @try {
+        [coder encodeObject:self.data forKey:@"data"];
+    }
+    @catch (NSException *exception) {
+        [coder encodeObject:[NSData data] forKey:@"data"];
+    }
     [coder encodeObject:self.response forKey:@"response"];
     [coder encodeObject:self.userInfo forKey:@"userInfo"];
     [coder encodeInt:self.storagePolicy forKey:@"storagePolicy"];
