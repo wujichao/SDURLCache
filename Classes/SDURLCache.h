@@ -59,6 +59,11 @@
 @property (nonatomic, assign) BOOL shouldRespectCacheControlHeaders;
 
 /*
+ *
+ */
+@property (nonatomic, copy) BOOL(^filterBlock)(NSURLRequest *request);
+
+/*
  * Returns a default cache director path to be used at cache initialization. The generated path directory
  * will be located in the application's cache directory and thus won't be synced by iTunes.
  */

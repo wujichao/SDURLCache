@@ -699,6 +699,10 @@ static dispatch_queue_t get_disk_io_queue() {
     }
     
     [super storeCachedResponse:cachedResponse forRequest:request];
+
+    if (![self shouldCache:request]) {
+        return;
+    }
     
     NSURLCacheStoragePolicy storagePolicy = cachedResponse.storagePolicy;
     if ((storagePolicy == NSURLCacheStorageAllowed || (storagePolicy == NSURLCacheStorageAllowedInMemoryOnly && _ignoreMemoryOnlyStoragePolicy))
@@ -731,6 +735,10 @@ static dispatch_queue_t get_disk_io_queue() {
     NSCachedURLResponse *memoryResponse = [super cachedResponseForRequest:request];
     if (memoryResponse) {
         return memoryResponse;
+    }
+
+    if (![self shouldCache:request]) {
+        return nil;
     }
     
     NSString *cacheKey = [[self class] cacheKeyForURL:request.URL];
@@ -811,6 +819,15 @@ static dispatch_queue_t get_disk_io_queue() {
     BOOL isCached = [[[NSFileManager alloc] init] fileExistsAtPath:cacheFile];
     return isCached;
 }
+
+- (BOOL)shouldCache:(NSURLRequest *)request
+{
+    if (self.filterBlock) {
+        return self.filterBlock(request);
+    }
+    return NO;
+}
+
 
 #pragma mark NSObject
 
